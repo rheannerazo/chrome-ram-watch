@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Chrome RAM Watch: Safe Tab Discard",
+  "version": "0.2.0",
+  "description": "Review and explicitly discard eligible inactive tabs without closing them.",
+  "minimum_chrome_version": "121",
+  "action": {
+    "default_title": "Review inactive tabs",
+    "default_popup": "popup.html"
+  },
+  "optional_permissions": [
+    "tabs"
+  ]
+}
