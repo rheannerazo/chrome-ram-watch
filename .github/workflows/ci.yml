@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: windows-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows PowerShell 5.1
+            shell: powershell
+          - name: PowerShell 7
+            shell: pwsh
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install PSScriptAnalyzer
+        shell: ${{ matrix.shell }}
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module `
+            -Name PSScriptAnalyzer `
+            -RequiredVersion 1.25.0 `
+            -Scope CurrentUser `
+            -Force
+
+      - name: Run static tests
+        shell: ${{ matrix.shell }}
+        run: .\tests\Test-Static.ps1
+
+      - name: Run PSScriptAnalyzer
+        shell: ${{ matrix.shell }}
+        run: |
+          $results = @(
+            Invoke-ScriptAnalyzer `
+              -Path .\Watch-ChromeRam.ps1 `
+              -Settings .\PSScriptAnalyzerSettings.psd1
+            Invoke-ScriptAnalyzer `
+              -Path .\tests\Test-Static.ps1 `
+              -Settings .\PSScriptAnalyzerSettings.psd1
+            Invoke-ScriptAnalyzer `
+              -Path .\tools\Build-Release.ps1 `
+              -Settings .\PSScriptAnalyzerSettings.psd1
+          )
+          $results | Format-Table -AutoSize
+          if ($results.Count -gt 0) {
+            throw "PSScriptAnalyzer reported $($results.Count) issue(s)."
+          }
+
+      - name: Build release archive
+        shell: ${{ matrix.shell }}
+        run: .\tools\Build-Release.ps1 -Version 0.1.0
