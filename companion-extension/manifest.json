@@ -1,14 +1,22 @@
 {
   "manifest_version": 3,
-  "name": "Chrome RAM Watch: Safe Tab Discard",
-  "version": "0.2.0",
-  "description": "Review and explicitly discard eligible inactive tabs without closing them.",
+  "name": "Chrome RAM Watch: Auto Guard",
+  "version": "0.3.0",
+  "description": "Monitor memory pressure and safely discard eligible inactive tabs without closing them.",
   "minimum_chrome_version": "121",
+  "background": {
+    "service_worker": "service-worker.js"
+  },
   "action": {
-    "default_title": "Review inactive tabs",
+    "default_title": "Chrome RAM Watch Auto Guard",
     "default_popup": "popup.html"
   },
+  "permissions": [
+    "storage"
+  ],
   "optional_permissions": [
+    "alarms",
+    "system.memory",
     "tabs"
   ]
 }

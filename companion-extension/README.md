@@ -1,33 +1,13 @@
-# Chrome RAM Watch: Safe Tab Discard
+# Chrome RAM Watch: Auto Guard
 
-This optional Manifest V3 v0.2 companion lets you review and explicitly discard inactive Chrome tabs. Discarding unloads page content from memory while keeping the tab in the tab strip. Chrome reloads the page when you activate the tab.
+This optional Manifest V3 v0.3 companion has two separate cleanup modes:
 
-The extension does not measure RAM. Use the main Chrome RAM Watch script for diagnosis, then use this companion only when you choose to unload specific inactive tabs.
+- Auto Guard checks physical-memory availability in the background and, only after sustained pressure, discards a tightly bounded set of eligible inactive tabs.
+- Manual review scans only the current Chrome window and discards only exact tabs you review and confirm.
 
-## Safety contract
+Discard unloads page content from memory while keeping the tab in the tab strip. Chrome reloads the page when you activate it.
 
-The extension:
-
-- never discards a tab automatically;
-- never closes a tab;
-- never kills a process;
-- never runs a background worker, timer, or scheduled task;
-- never sends network requests or telemetry;
-- never requests host permissions;
-- never injects code into pages or reads page contents;
-- never persists titles, URLs, selections, or results; and
-- never treats missing tab state as safe.
-
-Only tabs that meet every condition appear in the candidate list:
-
-- inactive in their Chrome window;
-- unpinned;
-- explicitly reported as inaudible;
-- not already discarded;
-- explicitly reported as auto-discardable; and
-- last activated at least as long ago as the selected threshold.
-
-Tabs with a missing or invalid `lastAccessed` value are excluded. Chrome 121 or later is required because `tabs.Tab.lastAccessed` was added in Chrome 121.
+The extension never closes tabs, kills processes, injects page code, reads page contents, makes network requests, or sends telemetry. The PowerShell watcher remains read-only.
 
 ## Install locally
 
@@ -35,49 +15,110 @@ Tabs with a missing or invalid `lastAccessed` value are excluded. Chrome 121 or 
 2. Turn on **Developer mode**.
 3. Select **Load unpacked**.
 4. Choose this `companion-extension` folder.
-5. Pin **Chrome RAM Watch: Safe Tab Discard** if you want quick access.
+5. Pin **Chrome RAM Watch: Auto Guard** if you want quick access.
 
-No permission is required at install time. The manifest declares `tabs` only as an optional runtime permission.
+The manifest requires only Chrome's non-warning `storage` permission. It is used only for local Auto Guard consent, configuration, aggregate state, cooldown, and the bounded sanitized journal. Auto Guard stays off until you enable it, and scheduling, physical-memory access, and title or URL display remain optional.
 
-The permitted read-only tab calls are `chrome.tabs.query()` and `chrome.tabs.get()`. Optional permission management is limited to `chrome.permissions.contains()`, `chrome.permissions.request()`, and `chrome.permissions.remove()`. The only tab or page-state mutation is the exact, explicitly confirmed `chrome.tabs.discard(tabId)` call.
+## Enable Auto Guard
 
-## Use the review flow
+Auto Guard starts disabled.
 
-1. Open the extension popup in the Chrome window you want to review. The popup scans only that current window and only while it is open. Open it separately in every other Chrome window you want to review.
+1. Open the popup.
+2. Choose an available-memory trigger and minimum inactive age. The defaults are 15% available physical RAM and four hours inactive.
+3. Read the unsaved-work warning and select the consent checkbox.
+4. Select **Enable Auto Guard**.
+
+That user gesture requests two optional permissions:
+
+- `alarms` schedules a local check every two minutes;
+- `system.memory` reads total and available physical-memory capacity.
+
+The required non-warning `storage` permission keeps the versioned consent, strict configuration, aggregate status, cooldown, and bounded local action journal across service-worker restarts. It does not enable Auto Guard by itself.
+
+Auto Guard requires three consecutive valid low-memory samples. A missing or invalid reading, clock rollback, normal reading, or gap longer than five minutes resets continuity. After the third qualifying sample, it attempts no more than two oldest eligible tabs, then reserves a fifteen-minute global cooldown before another automatic cycle.
+
+Before every automatic target, it confirms that permission, consent, configuration revision, pressure, and cooldown state remain valid. It writes a sanitized intent record, fetches the exact tab ID, applies the full safety check, checks the current in-memory consent epoch, calls `chrome.tabs.discard(tabId)` with no asynchronous gap after those checks, validates Chrome's response, and fetches the tab once more to confirm `discarded === true`.
+
+An API anomaly, invalid response, unconfirmed result, configuration change, consent-epoch change, or storage failure stops the remaining cycle. Disable, re-enable, or removal of an automatic permission invalidates the epoch synchronously, so a cycle waiting on Chrome cannot issue a later discard. A protected tab-state change skips that tab. Automatic actions are oldest-first with a numeric tab-ID tie break.
+
+Disable Auto Guard from the popup to clear its alarm, automatic settings, state, and journal, then remove only the optional `alarms` and `system.memory` permissions. Removing either permission also disarms Auto Guard and deletes its stored consent and automatic state. Granting it again cannot resume the old consent; a fresh enable gesture is required. The required local `storage` permission and separate optional `tabs` permission are unchanged.
+
+## Automatic safety contract
+
+An automatic candidate must have every exact state:
+
+- a valid numeric tab ID;
+- `active === false`;
+- `pinned === false`;
+- `audible === false`;
+- `discarded === false`;
+- `autoDiscardable === true`;
+- `incognito === false`;
+- `highlighted === false`;
+- `status === "complete"`; and
+- a finite `lastAccessed` timestamp at or beyond the configured inactivity threshold.
+
+Missing, malformed, future, or unknown values always fail closed. Auto Guard ignores incognito tabs even if Chrome later allows the extension in incognito mode.
+
+## Use manual review
+
+1. Open the extension popup in the Chrome window you want to review. It scans only that current window. Open the popup separately in every other Chrome window you want to review.
 2. Choose an inactivity threshold.
-3. Optional: select **Show titles and URLs**. Chrome asks whether to grant the optional `tabs` permission. Without it, the full workflow uses exact tab IDs and does not show titles or URLs.
-4. Select one or more eligible tabs.
-5. Select **Review selected tabs**. The extension re-fetches every selection and removes tabs that no longer meet the safety rules.
-6. Review the exact tab IDs and, if permission is enabled, titles and committed URLs. Read the unsaved-work warning.
-7. Select **Discard selected tabs** as the separate final action.
-8. Keep the popup open until the results appear. Before every discard call, the extension re-fetches the tab and applies the same strict safety check again. It then fetches the tab once more and reports success only if Chrome returns `discarded: true`.
+3. Optional: select **Show titles and URLs**. Chrome requests the optional `tabs` permission. Without it, exact tab IDs remain available.
+4. Select eligible tabs.
+5. Select **Review selected tabs**. The extension re-fetches each selection and removes any tab that no longer meets the manual safeguards.
+6. Review the exact tab IDs and unsaved-work warning.
+7. Separately select **Discard selected tabs**.
+8. Keep the popup open until the confirmed results appear.
 
-Use **Hide titles and URLs** to remove the optional `tabs` permission.
+Manual review requires inactive, unpinned, explicitly inaudible, not already discarded, explicitly auto-discardable, old-enough tabs. Missing state is never treated as safe. A changed tab means its exact ID or protected active, pinned, audible, discarded, auto-discardable, or inactivity state changed.
+
+If Chrome allows this extension in incognito mode, manual candidates are labeled **Incognito** from Chrome's `tab.incognito` value. Auto Guard still ignores them.
+
+## Data and capability boundaries
+
+The service worker and popup use only these Chrome capabilities:
+
+- `chrome.permissions.contains()`, `chrome.permissions.request()`, and `chrome.permissions.remove()`;
+- `chrome.tabs.query()`, `chrome.tabs.get()`, and `chrome.tabs.discard()`;
+- `chrome.system.memory.getInfo()`;
+- the named Auto Guard alarm through `chrome.alarms`; and
+- `chrome.storage.local` for automatic configuration, aggregate state, and the bounded sanitized journal.
+
+The only tab or page-state mutation in either mode is `chrome.tabs.discard(tabId)`. The extension never closes a tab.
+
+The journal can contain timestamp, cycle number, configuration revision, exact tab ID, status, reason code, and available-memory percentage. It never stores titles, URLs, page contents, incognito details, raw error messages, or browsing history, and it never uses synced storage.
+
+The optional `tabs` permission exposes sensitive title and URL fields only while granted. The popup may display the current title and committed URL, but neither automatic logic nor storage uses them.
 
 ## Important limitations
 
-- The extension cannot inspect forms, editors, drafts, uploads, or unsaved page state because it has no host permissions or content scripts. Treat the review warning seriously.
-- A protected safety state can change after any observation. Chrome does not provide an atomic "discard only if these properties still match" operation. The extension minimizes that race by placing its final synchronous safety check directly before `chrome.tabs.discard(tabId)`. Here, a changed tab means that its exact ID or a protected active, pinned, audible, discarded, auto-discardable, or inactivity state changed. A title or URL change alone is not treated as a protected-state change.
-- Review and discard are bound to the exact Chrome tab ID. Optional titles and URLs are display labels, not an atomic page-identity lock, so they can change if the same tab navigates.
-- Chrome decides the actual memory effect. This extension does not estimate or claim a specific amount of RAM recovered.
-- A discarded tab can reload itself if it becomes active or Chrome otherwise restores it. The result screen reports only the state confirmed immediately after the request.
-- Incognito tabs are visible only if Chrome allows this extension in incognito mode through Chrome's extension settings. Open the popup separately in each incognito window you want to review. Every incognito candidate is labeled **Incognito** from Chrome's `tab.incognito` value.
+- The extension cannot detect unfinished forms, drafts, editors, uploads, calls, captures, or other unsaved page state. Pin any tab Auto Guard must never touch.
+- Chrome does not provide an atomic conditional-discard operation. The implementation minimizes, but cannot remove, the small race after the final state observation.
+- `lastAccessed` is the last activation time, not proof that a page has no background work.
+- `chrome.system.memory` reports physical capacity and availability only. It does not report Windows commit pressure, Chrome-only RAM, or per-tab memory.
+- Oldest-first selection is deterministic but may not choose the largest tab.
+- Alarms can be delayed or coalesced after sleep. A long gap resets the pressure streak.
+- Chrome decides the actual memory effect. A discarded tab can reload itself later.
 
 ## Local validation
 
-From this folder, run:
+From the repository root, run:
 
 ```powershell
-node --check .\popup.js
-node -e "JSON.parse(require('fs').readFileSync('manifest.json', 'utf8')); console.log('manifest ok')"
+node --check .\companion-extension\guard-core.js
+node --check .\companion-extension\service-worker.js
+node --check .\companion-extension\popup.js
+node .\tests\Test-Companion.js
+node .\tests\Test-AutoGuard.js
 ```
 
-The pure safety helpers in `popup.js` are available through guarded CommonJS exports when the file is loaded by Node. Chrome never uses that export path. This makes the eligibility rules testable without a browser DOM.
+See [SECURITY.md](SECURITY.md) for the detailed permission and storage disclosure.
 
 ## Chrome API references
 
 - [Chrome Tabs API](https://developer.chrome.com/docs/extensions/reference/api/tabs)
+- [Chrome System Memory API](https://developer.chrome.com/docs/extensions/reference/api/system/memory)
+- [Chrome Alarms API](https://developer.chrome.com/docs/extensions/reference/api/alarms)
+- [Chrome Storage API](https://developer.chrome.com/docs/extensions/reference/api/storage)
 - [Chrome Permissions API](https://developer.chrome.com/docs/extensions/reference/api/permissions)
-- [Declare extension permissions](https://developer.chrome.com/docs/extensions/develop/concepts/declare-permissions)
-
-See [SECURITY.md](SECURITY.md) for the full permission and data-flow disclosure.

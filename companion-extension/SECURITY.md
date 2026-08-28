@@ -1,64 +1,106 @@
 # Security and privacy disclosure
 
+## Trust boundary
+
+Chrome RAM Watch: Auto Guard has a separate manual mode and automatic mode.
+
+Manual review does not depend on the required `storage` permission and mutates a tab only after review and a separate final confirmation. Auto Guard starts disabled, requires current versioned consent, and requests its two automatic optional capabilities only from the **Enable Auto Guard** user gesture.
+
 ## Permission model
 
-| Capability | Manifest access | How it is used |
+| Capability | Manifest access | Use |
 | --- | --- | --- |
-| Read non-sensitive tab state and call `chrome.tabs.discard(tabId)` | No required permission | Candidate scan, review recheck, final revalidation, explicit discard, and status confirmation |
-| Show titles and committed URLs | Optional `tabs` permission | Requested only after the user selects **Show titles and URLs** |
+| Query non-sensitive tab state and call `chrome.tabs.discard(tabId)` | No permission required | Manual candidates, automatic candidates, exact revalidation, discard, and confirmation |
+| Show current titles and committed URLs | Optional `tabs` | Requested separately from **Show titles and URLs**; never used by automatic logic or storage |
+| Schedule automatic checks | Optional `alarms` | One exact named alarm every two minutes while Auto Guard is enabled |
+| Read physical-memory capacity and availability | Optional `system.memory` | Sustained-pressure gate through `chrome.system.memory.getInfo()` |
+| Persist automatic consent, configuration, state, cooldown, and journal | Required non-warning `storage` | `chrome.storage.local` only; this permission does not enable Auto Guard by itself |
 | Read or change website content | Not requested | Never used |
 | Contact websites or services | No host permissions | Never used |
-| Run in the background | No service worker or background page | Never used |
 
-Chrome's optional `tabs` permission makes the sensitive `title`, `url`, `pendingUrl`, and `favIconUrl` tab fields available to the extension. This code displays only `title` and the committed `url`. It does not use, persist, or transmit those values. You can remove the permission from the popup by selecting **Hide titles and URLs**.
+The service worker is always packaged but remains inert unless required `storage`, both optional automatic permissions, current consent, valid strict configuration, valid local state, and the exact named alarm are present.
 
-The operation target is always the exact numeric Chrome tab ID. Titles and URLs are display labels only. If a page navigates within the same tab after review, Chrome does not provide an atomic page-identity condition for the later discard call.
+Optional permission management is limited to `chrome.permissions.contains()`, `chrome.permissions.request()`, and `chrome.permissions.remove()`.
 
-## Local data flow
+## Automatic execution contract
 
-All work happens inside the popup while it is open:
+Auto Guard samples available physical memory every two minutes. It needs three consecutive low-memory samples, with no normal, invalid, failed, reversed-clock, or longer-than-five-minute gap. The user selects an allowed trigger of 10%, 15%, or 20% available RAM and an inactivity threshold of two, four, eight, or twenty-four hours.
 
-1. The popup queries Chrome for non-sensitive tab state.
-2. A pure filter excludes any tab whose state is unsafe, unknown, too recent, or malformed.
-3. Your checkbox selection exists only in popup memory.
-4. The review action re-fetches and revalidates every selected tab.
-5. The final discard action re-fetches each reviewed tab, verifies the exact tab ID, and runs the same safety function immediately before `chrome.tabs.discard(tabId)`.
-6. The popup rejects an undefined, wrong-ID, or non-discarded API response. It then re-fetches the tab after the call and reports success only when `discarded === true`.
-7. Closing the popup clears its in-memory state.
+A qualifying cycle reserves a fifteen-minute cooldown and attempts at most two discard API calls. Before each target it rechecks permissions, configuration signature, physical-memory pressure, and storage. It then:
 
-There is no remote code, external JavaScript dependency, `fetch`, `XMLHttpRequest`, WebSocket, beacon, analytics, telemetry, local storage, synced storage, content script, or background execution.
+1. Writes a sanitized local intent entry.
+2. Fetches the exact numeric tab ID.
+3. Applies the full pure safety predicate.
+4. Calls `chrome.tabs.discard(tabId)` with no asynchronous gap after that passing predicate.
+5. Requires an exact-ID response with `discarded === true`.
+6. Fetches the exact tab again and requires `discarded === true`.
 
-## Protected states
+Wrong, missing, rejected, or unconfirmed API state aborts the remaining cycle. A normal protected-state change skips that tab. Storage failure before intent means no mutation. Storage or confirmation failure after a call stops the cycle and leaves the existing journal as the conservative record.
 
-The filter requires all of these exact values:
+Each cycle captures the current in-memory consent epoch. Disable, re-enable, or removal of `alarms`, `system.memory`, or the required storage capability increments that epoch synchronously before asynchronous cleanup begins. The epoch is checked after asynchronous boundaries and once more immediately before `chrome.tabs.discard(tabId)`, with no asynchronous gap. Permission removal also clears the alarm and deletes the stored configuration, state, and journal. Regranting a removed permission cannot resume old consent; a fresh enable gesture is required.
 
-- `active === false`
-- `pinned === false`
-- `audible === false`
-- `discarded === false`
-- `autoDiscardable === true`
-- a finite, positive `lastAccessed` timestamp that is old enough for the chosen threshold
+## Protected automatic states
 
-If any value is missing, malformed, or cannot be re-fetched, the tab is skipped. `autoDiscardable === false` is always a hard skip.
+Every automatic target must have exact values:
 
-## What discard means
+- valid numeric ID matching the requested ID;
+- `active === false`;
+- `pinned === false`;
+- `audible === false`;
+- `discarded === false`;
+- `autoDiscardable === true`;
+- `incognito === false`;
+- `highlighted === false`;
+- `status === "complete"`; and
+- finite, positive, non-future `lastAccessed` old enough for the configured threshold.
 
-`chrome.tabs.discard(tabId)` asks Chrome to unload a tab's page content from memory. It does not close the tab. Chrome keeps the tab in the tab strip and normally reloads it when activated.
+Missing or malformed values fail closed. Auto Guard always excludes incognito tabs, even if Chrome permits this extension in incognito mode.
 
-Discard can still lose unsaved in-page state. The extension cannot detect that state without broader page access, which it deliberately does not request. The review screen therefore shows an explicit warning before the final action.
+## Manual execution contract
 
-## Race boundary
+The manual popup scans only that current window. Open the popup separately in every other Chrome window you want to review. Candidate reading uses `chrome.tabs.query()` and exact revalidation uses `chrome.tabs.get()`.
 
-Chrome does not expose an atomic conditional-discard call. A tab can theoretically change in the short interval between the final `chrome.tabs.get(tabId)` result and `chrome.tabs.discard(tabId)`. The implementation reduces this interval by placing the pure safety check directly next to the discard call. Chrome also refuses to discard an active or already discarded tab, but this extension does not rely on that behavior as its only guard.
+Manual candidates require inactive, unpinned, explicitly inaudible, not already discarded, explicitly auto-discardable, old-enough tabs. The review action cannot discard. Immediately before the final mutation, the popup re-fetches the exact reviewed tab ID and repeats the full manual safety check. A changed tab means the exact ID or protected active, pinned, audible, discarded, auto-discardable, or inactivity state changed.
+
+The only tab or page-state mutation in either mode is `chrome.tabs.discard(tabId)`. The extension never uses `chrome.tabs.remove()`.
+
+## Local data
+
+Manual selections and results remain in popup memory and disappear when the popup closes. Titles and URLs are display-only and never stored.
+
+While Auto Guard is enabled, `chrome.storage.local` contains only:
+
+- consent and configuration revision;
+- selected numeric thresholds;
+- pressure streak, aggregate timestamps, cooldown, and aggregate last result; and
+- a bounded twenty-entry journal containing timestamp, cycle number, configuration revision, exact tab ID, status, reason code, and available-memory percentage.
+
+The extension never stores titles, URLs, page contents, incognito metadata, raw Chrome error messages, or browsing history. It never uses `chrome.storage.sync`. Disabling Auto Guard clears all three automatic storage keys before the popup removes the two optional automatic permissions.
+
+## Capability exclusions
+
+There is no remote code, external JavaScript dependency, network request, telemetry, content script, host permission, native messaging, process API, process termination, tab closing, tab navigation, tab reload, window removal, synced storage, page capture, or page-content access.
+
+## Residual risk
+
+Chrome does not expose unsaved forms, editors, uploads, calls, captures, or other in-page state without much broader access. `lastAccessed` is activation time, not proof of inactivity inside a page. Users should pin any tab Auto Guard must never touch.
+
+Chrome also has no atomic conditional-discard operation. A small race remains after the final observation. The code minimizes that interval and confirms the result but cannot remove the race completely.
+
+`chrome.system.memory` exposes physical capacity and availability only. It does not prove Chrome caused pressure, measure Windows commit, or identify per-tab RAM. Oldest-first selection is deterministic but may not recover the most memory. Chrome can reload a discarded page later.
 
 ## Source review checklist
 
 Before loading a modified copy, verify that:
 
-- `manifest.json` has no `permissions`, `host_permissions`, `content_scripts`, or `background` entry;
-- `optional_permissions` contains only `tabs`;
-- `popup.html` loads only local `popup.css` and `popup.js`;
-- `popup.js` contains no networking or storage calls;
-- `chrome.permissions.request({ permissions: ["tabs"] })` remains inside the details-button click path;
-- every `chrome.tabs.discard` call is preceded by a fresh `chrome.tabs.get` and strict safety check; and
-- there is no call to `chrome.tabs.remove` or any process-management API.
+- Auto Guard still starts disabled and requires current consent;
+- required permissions are exactly `storage`, with no host permissions or content scripts;
+- optional permissions are exactly `alarms`, `system.memory`, and `tabs`;
+- the worker imports only local `guard-core.js`;
+- every automatic and manual discard uses an exact tab ID, a fresh fetch, strict immediate revalidation, and post-call confirmation;
+- disable, re-enable, and automatic-permission removal synchronously invalidate any active cycle before cleanup begins;
+- permission removal clears stored consent so permission regrant alone cannot resume Auto Guard;
+- automatic candidates exclude incognito, highlighted, and loading tabs;
+- the automatic cycle cap and cooldown remain bounded;
+- storage remains local, sanitized, and bounded; and
+- there is no networking, native messaging, process control, tab closing, or page injection.

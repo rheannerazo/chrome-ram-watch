@@ -10,18 +10,93 @@
     <main class="app-shell">
       <header class="app-header">
         <p class="eyebrow">Chrome RAM Watch companion</p>
-        <h1>Safe tab discard</h1>
+        <h1>Memory Auto Guard</h1>
         <p class="intro">
-          Review inactive tabs and choose exactly which ones Chrome may unload from memory.
+          Reclaim Chrome memory automatically under sustained system pressure, or review inactive tabs manually.
         </p>
       </header>
 
       <div class="safety-banner">
-        <strong>Manual only.</strong> This popup never discards a tab until you complete the separate review and discard steps.
+        <strong>Auto Guard starts off.</strong> It runs only after you enable it and accept the unsaved-work warning. Manual review remains separate.
       </div>
 
+      <section id="auto-panel" aria-labelledby="auto-heading">
+        <div class="section-heading-row">
+          <h2 id="auto-heading">Auto Guard</h2>
+          <span id="auto-state-badge" class="state-badge" data-state="off">Off</span>
+        </div>
+
+        <p class="permission-note">
+          When enabled, Auto Guard checks available physical memory every two minutes. It acts only after three consecutive low-memory checks and never closes tabs.
+        </p>
+
+        <div class="settings-grid">
+          <label class="field" for="auto-memory-threshold">
+            <span class="field__label">Act when available RAM is</span>
+            <select id="auto-memory-threshold">
+              <option value="10">10% or less</option>
+              <option value="15" selected>15% or less</option>
+              <option value="20">20% or less</option>
+            </select>
+          </label>
+
+          <label class="field" for="auto-age-threshold">
+            <span class="field__label">Only tabs inactive for</span>
+            <select id="auto-age-threshold">
+              <option value="120">2 hours</option>
+              <option value="240" selected>4 hours</option>
+              <option value="480">8 hours</option>
+              <option value="1440">24 hours</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="warning auto-warning">
+          <strong>Unsaved-work warning.</strong>
+          Automatic discard can lose unfinished forms, drafts, editors, or uploads in inactive tabs. Auto Guard cannot inspect page contents. Pin any tab it must never touch.
+        </div>
+
+        <label id="auto-risk-label" class="risk-consent" for="auto-risk-consent">
+          <input id="auto-risk-consent" type="checkbox">
+          <span>I understand this risk and want Auto Guard to run automatically.</span>
+        </label>
+
+        <div class="button-row">
+          <button id="auto-toggle-button" class="button button--primary" type="button" disabled>
+            Enable Auto Guard
+          </button>
+          <button id="auto-check-button" class="button button--secondary" type="button" disabled>
+            Check now
+          </button>
+        </div>
+
+        <p id="auto-status" class="status" role="status" aria-live="polite"></p>
+
+        <dl class="auto-metrics">
+          <div>
+            <dt>Available RAM</dt>
+            <dd id="auto-available-memory">Not checked</dd>
+          </div>
+          <div>
+            <dt>Pressure streak</dt>
+            <dd id="auto-pressure-streak">0 of 3</dd>
+          </div>
+          <div>
+            <dt>Last automatic action</dt>
+            <dd id="auto-last-action">None</dd>
+          </div>
+        </dl>
+
+        <div id="auto-log-container" class="auto-log" hidden>
+          <h3>Recent automatic actions</h3>
+          <ul id="auto-log-list" class="result-list" aria-label="Recent automatic actions"></ul>
+        </div>
+      </section>
+
+      <hr class="section-divider">
+
       <section id="scan-panel" aria-labelledby="scan-heading">
-        <h2 id="scan-heading" tabindex="-1">Choose candidates</h2>
+        <h2 id="scan-heading" tabindex="-1">Manual review</h2>
         <p class="permission-note">
           This scan covers only this Chrome window. Open the popup separately in every Chrome window you want to review.
         </p>
@@ -122,6 +197,7 @@
       </footer>
     </main>
 
+    <script src="guard-core.js" defer></script>
     <script src="popup.js" defer></script>
   </body>
 </html>

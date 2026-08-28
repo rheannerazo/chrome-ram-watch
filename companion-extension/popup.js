@@ -136,7 +136,27 @@
     return;
   }
 
+  const guardCore = globalThis.ChromeRamWatchGuardCore;
+  if (!guardCore) {
+    throw new Error("Chrome RAM Watch Auto Guard core is unavailable.");
+  }
+
+  const AUTO_PERMISSIONS = Object.freeze(["alarms", "system.memory"]);
+
   const elements = {
+    autoStateBadge: document.querySelector("#auto-state-badge"),
+    autoMemoryThreshold: document.querySelector("#auto-memory-threshold"),
+    autoAgeThreshold: document.querySelector("#auto-age-threshold"),
+    autoRiskLabel: document.querySelector("#auto-risk-label"),
+    autoRiskConsent: document.querySelector("#auto-risk-consent"),
+    autoToggleButton: document.querySelector("#auto-toggle-button"),
+    autoCheckButton: document.querySelector("#auto-check-button"),
+    autoStatus: document.querySelector("#auto-status"),
+    autoAvailableMemory: document.querySelector("#auto-available-memory"),
+    autoPressureStreak: document.querySelector("#auto-pressure-streak"),
+    autoLastAction: document.querySelector("#auto-last-action"),
+    autoLogContainer: document.querySelector("#auto-log-container"),
+    autoLogList: document.querySelector("#auto-log-list"),
     scanPanel: document.querySelector("#scan-panel"),
     reviewPanel: document.querySelector("#review-panel"),
     resultsPanel: document.querySelector("#results-panel"),
@@ -166,6 +186,8 @@
   };
 
   const state = {
+    autoBusy: false,
+    autoEnabled: false,
     busy: false,
     eligibleTabs: [],
     selectedTabIds: new Set(),
@@ -339,9 +361,293 @@
     }
   }
 
+  function formatTimestamp(timestamp) {
+    if (!Number.isInteger(timestamp) || timestamp <= 0) {
+      return "None";
+    }
+
+    return new Date(timestamp).toLocaleString();
+  }
+
+  function describeAutoReason(reason) {
+    const descriptions = {
+      "user-consent": "Auto Guard was enabled.",
+      "pressure-normal": "Available memory is above the configured trigger.",
+      "pressure-sample-recorded": "Low memory was recorded, but the sustained-pressure gate is not complete yet.",
+      "pressure-confirmed": "Sustained low memory was confirmed.",
+      "cooldown-active": "The global cooldown is still active.",
+      "memory-invalid": "Physical-memory data was unavailable, so no tab was touched.",
+      "tab-query-invalid": "Chrome did not return a valid tab list, so no tab was touched.",
+      "no-eligible-tabs": "No tab met every automatic safety rule.",
+      "pressure-recovered": "Available memory recovered before the next tab.",
+      "discard-call-cap-reached": "The two-attempt cycle limit was reached.",
+      "candidates-exhausted": "Every bounded candidate was handled.",
+      "confirmed-discarded": "Chrome confirmed the tab was discarded.",
+      "eligible-under-pressure": "Intent recorded before exact final revalidation.",
+      "config-changed": "Settings changed during the cycle, so the remaining work stopped.",
+      "permissions-changed": "Permissions changed during the cycle, so the remaining work stopped.",
+      "consent-cancelled": "Consent changed during the cycle, so no later discard was allowed.",
+      "discard-response-unconfirmed": "Chrome did not confirm the exact discarded tab, so the cycle stopped.",
+      "confirmation-failed": "The final discarded state could not be confirmed, so the cycle stopped.",
+      "tab-get-failed": "The exact tab could not be re-fetched, so the cycle stopped."
+    };
+
+    if (descriptions[reason]) {
+      return descriptions[reason];
+    }
+
+    if (Object.values(INELIGIBLE).includes(reason) || Object.values(guardCore.INELIGIBLE).includes(reason)) {
+      return `The tab was skipped because its protected state changed (${reason}).`;
+    }
+
+    return reason ? `Auto Guard stopped safely (${reason}).` : "No automatic action has run yet.";
+  }
+
+  function renderAutoLog(log) {
+    const safeLog = Array.isArray(log) ? log.slice(-6).reverse() : [];
+    const fragment = document.createDocumentFragment();
+    let itemCount = 0;
+
+    for (const entry of safeLog) {
+      if (!entry || !Number.isInteger(entry.tabId)) {
+        continue;
+      }
+
+      const item = document.createElement("li");
+      item.className = "result-item";
+      item.dataset.result = entry.status === "discarded"
+        ? "discarded"
+        : entry.status === "skipped"
+          ? "skipped"
+          : entry.status === "failed"
+            ? "failed"
+            : "intent";
+
+      const title = document.createElement("strong");
+      title.textContent = `Tab ID ${entry.tabId}`;
+
+      const detail = document.createElement("span");
+      detail.className = "result-item__status";
+      const memoryText = Number.isFinite(entry.availablePercent)
+        ? ` Available RAM: ${entry.availablePercent.toFixed(1)}%.`
+        : "";
+      detail.textContent = `${formatTimestamp(entry.timestamp)}. ${describeAutoReason(entry.reason)}${memoryText}`;
+
+      item.append(title, detail);
+      fragment.append(item);
+      itemCount += 1;
+    }
+
+    elements.autoLogList.replaceChildren(fragment);
+    elements.autoLogContainer.hidden = itemCount === 0;
+  }
+
+  function renderAutoStatus(autoStatus, responseOk) {
+    const status = autoStatus && typeof autoStatus === "object" ? autoStatus : null;
+    const enabled = Boolean(status && status.enabled === true);
+    const config = status && status.config && typeof status.config === "object"
+      ? status.config
+      : null;
+    const autoState = status && status.state && typeof status.state === "object"
+      ? status.state
+      : {};
+
+    state.autoEnabled = enabled;
+    elements.autoStateBadge.textContent = enabled ? "On" : "Off";
+    elements.autoStateBadge.dataset.state = enabled ? "on" : "off";
+    elements.autoToggleButton.textContent = enabled ? "Disable Auto Guard" : "Enable Auto Guard";
+    elements.autoToggleButton.classList.toggle("button--danger", enabled);
+    elements.autoToggleButton.classList.toggle("button--primary", !enabled);
+    elements.autoRiskLabel.hidden = enabled;
+
+    if (config && guardCore.ALLOWED_TRIGGER_PERCENTAGES.has(config.triggerPercent)) {
+      elements.autoMemoryThreshold.value = String(config.triggerPercent);
+    }
+    if (config && guardCore.ALLOWED_INACTIVITY_MINUTES.has(config.inactivityMinutes)) {
+      elements.autoAgeThreshold.value = String(config.inactivityMinutes);
+    }
+
+    if (!enabled) {
+      elements.autoRiskConsent.checked = false;
+    }
+
+    elements.autoAvailableMemory.textContent = Number.isFinite(autoState.lastAvailablePercent)
+      ? `${autoState.lastAvailablePercent.toFixed(1)}%`
+      : "Not checked";
+    const requiredSamples = Number.isInteger(autoState.requiredSamples)
+      ? autoState.requiredSamples
+      : guardCore.REQUIRED_PRESSURE_SAMPLES;
+    const pressureStreak = Number.isInteger(autoState.pressureStreak)
+      ? autoState.pressureStreak
+      : 0;
+    elements.autoPressureStreak.textContent = `${pressureStreak} of ${requiredSamples}`;
+    elements.autoLastAction.textContent = formatTimestamp(autoState.lastActionAt);
+    renderAutoLog(status && status.log);
+
+    if (!responseOk) {
+      setStatus(
+        elements.autoStatus,
+        "Auto Guard is off because its permission, configuration, alarm, or stored state could not be verified.",
+        "warning"
+      );
+    } else if (!enabled) {
+      setStatus(elements.autoStatus, "Auto Guard is off. No background cleanup is running.", null);
+    } else if (autoState.lastResult) {
+      setStatus(
+        elements.autoStatus,
+        `Auto Guard is on. ${describeAutoReason(autoState.lastResult.reason)}`,
+        autoState.lastResult.status === "failed" ? "warning" : "success"
+      );
+    } else {
+      setStatus(elements.autoStatus, "Auto Guard is on and waiting for its next memory check.", "success");
+    }
+
+    updateControls();
+  }
+
+  async function hasAutoPermissions() {
+    try {
+      return await chrome.permissions.contains({ permissions: AUTO_PERMISSIONS.slice() });
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  async function refreshAutoStatus() {
+    state.autoBusy = true;
+    updateControls();
+
+    try {
+      if (!await hasAutoPermissions()) {
+        renderAutoStatus(null, true);
+        return;
+      }
+
+      const response = await chrome.runtime.sendMessage({ type: "auto-guard:get-status" });
+      renderAutoStatus(response && response.status, Boolean(response && response.ok));
+    } catch (error) {
+      renderAutoStatus(null, false);
+      setStatus(elements.autoStatus, `Could not read Auto Guard status: ${errorMessage(error)}`, "error");
+    } finally {
+      state.autoBusy = false;
+      updateControls();
+    }
+  }
+
+  async function enableAutoGuard() {
+    if (state.autoBusy || state.autoEnabled || !elements.autoRiskConsent.checked) {
+      return;
+    }
+
+    const triggerPercent = Number.parseInt(elements.autoMemoryThreshold.value, 10);
+    const inactivityMinutes = Number.parseInt(elements.autoAgeThreshold.value, 10);
+    const config = guardCore.createConfig(triggerPercent, inactivityMinutes);
+    if (!config) {
+      setStatus(elements.autoStatus, "Auto Guard settings are invalid. Nothing was enabled.", "error");
+      return;
+    }
+
+    state.autoBusy = true;
+    updateControls();
+    setStatus(elements.autoStatus, "Requesting the two optional Auto Guard capabilities...", null);
+
+    try {
+      const granted = await chrome.permissions.request({ permissions: AUTO_PERMISSIONS.slice() });
+      if (!granted) {
+        renderAutoStatus(null, true);
+        setStatus(elements.autoStatus, "Auto Guard permission was not granted. It remains off.", "warning");
+        return;
+      }
+
+      const response = await chrome.runtime.sendMessage({
+        type: "auto-guard:enable",
+        payload: {
+          consentVersion: guardCore.CONSENT_VERSION,
+          inactivityMinutes: config.inactivityMinutes,
+          triggerPercent: config.triggerPercent
+        }
+      });
+      if (!response || !response.ok || !response.status || response.status.enabled !== true) {
+        await chrome.permissions.remove({ permissions: AUTO_PERMISSIONS.slice() });
+        renderAutoStatus(null, false);
+        return;
+      }
+
+      renderAutoStatus(response.status, true);
+      setStatus(elements.autoStatus, "Auto Guard is on. The first memory check is scheduled in two minutes.", "success");
+    } catch (error) {
+      try {
+        await chrome.permissions.remove({ permissions: AUTO_PERMISSIONS.slice() });
+      } catch (_removeError) {
+        // The next status check still fails closed if cleanup is incomplete.
+      }
+      renderAutoStatus(null, false);
+      setStatus(elements.autoStatus, `Could not enable Auto Guard: ${errorMessage(error)}`, "error");
+    } finally {
+      state.autoBusy = false;
+      updateControls();
+    }
+  }
+
+  async function disableAutoGuard() {
+    if (state.autoBusy || !state.autoEnabled) {
+      return;
+    }
+
+    state.autoBusy = true;
+    updateControls();
+    setStatus(elements.autoStatus, "Stopping Auto Guard and clearing its local state...", null);
+
+    try {
+      const response = await chrome.runtime.sendMessage({ type: "auto-guard:disable" });
+      const removed = await chrome.permissions.remove({ permissions: AUTO_PERMISSIONS.slice() });
+      renderAutoStatus(response && response.status, Boolean(response && response.ok));
+      setStatus(
+        elements.autoStatus,
+        removed
+          ? "Auto Guard is off. Its alarm, automatic state, journal, and two optional permissions were removed."
+          : "Auto Guard is off, but Chrome did not confirm removal of every optional capability.",
+        removed ? null : "warning"
+      );
+    } catch (error) {
+      setStatus(elements.autoStatus, `Could not fully disable Auto Guard: ${errorMessage(error)}`, "error");
+    } finally {
+      state.autoBusy = false;
+      updateControls();
+    }
+  }
+
+  async function checkAutoGuardNow() {
+    if (state.autoBusy || !state.autoEnabled) {
+      return;
+    }
+
+    state.autoBusy = true;
+    updateControls();
+    setStatus(elements.autoStatus, "Checking physical memory and protected tab state...", null);
+
+    try {
+      const response = await chrome.runtime.sendMessage({ type: "auto-guard:check-now" });
+      renderAutoStatus(response && response.status, Boolean(response && response.ok));
+    } catch (error) {
+      setStatus(elements.autoStatus, `Auto Guard check failed closed: ${errorMessage(error)}`, "error");
+    } finally {
+      state.autoBusy = false;
+      updateControls();
+    }
+  }
+
   function updateControls() {
     const selectedCount = state.selectedTabIds.size;
     const allSelected = state.eligibleTabs.length > 0 && selectedCount === state.eligibleTabs.length;
+
+    elements.autoMemoryThreshold.disabled = state.autoBusy || state.autoEnabled;
+    elements.autoAgeThreshold.disabled = state.autoBusy || state.autoEnabled;
+    elements.autoRiskConsent.disabled = state.autoBusy || state.autoEnabled;
+    elements.autoToggleButton.disabled = state.autoBusy || (
+      !state.autoEnabled && !elements.autoRiskConsent.checked
+    );
+    elements.autoCheckButton.disabled = state.autoBusy || !state.autoEnabled;
 
     elements.threshold.disabled = state.busy;
     elements.detailsPermissionButton.disabled = state.busy;
@@ -750,6 +1056,22 @@
     focusPanelHeading("results");
   }
 
+  elements.autoRiskConsent.addEventListener("change", () => {
+    updateControls();
+  });
+
+  elements.autoToggleButton.addEventListener("click", () => {
+    if (state.autoEnabled) {
+      void disableAutoGuard();
+    } else {
+      void enableAutoGuard();
+    }
+  });
+
+  elements.autoCheckButton.addEventListener("click", () => {
+    void checkAutoGuardNow();
+  });
+
   elements.tabList.addEventListener("change", (event) => {
     const checkbox = event.target.closest('input[type="checkbox"][data-tab-id]');
     if (!checkbox) {
@@ -812,5 +1134,6 @@
 
   showPanel("scan");
   focusPanelHeading("scan");
+  void refreshAutoStatus();
   void refreshEligibleTabs({ preserveSelection: false });
 }());
