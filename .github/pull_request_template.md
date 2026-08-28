@@ -14,9 +14,11 @@ Describe the problem and the behavior changed.
 ## Safety and privacy
 
 - [ ] The PowerShell watcher remains read-only, file-write-free, process-control-free, and network-free
-- [ ] Any companion discard remains opt-in, exact-ID-bound, separately confirmed, and immediately revalidated
-- [ ] The companion does not close tabs, run background cleanup, inject page code, use host permissions, use native messaging, or use the network
+- [ ] Manual discard remains exact-ID-bound, separately confirmed, and immediately revalidated
+- [ ] Automatic discard remains disabled by default, explicitly consented, pressure-gated, cooldown-bound, capped, exact-ID-bound, and immediately revalidated
+- [ ] The companion does not close tabs, inject page code, use host permissions, use native messaging, use synced storage, control processes, or use the network
 - [ ] The watcher does not emit raw Chrome command lines or page URLs; any displayed executable path is documented
-- [ ] The companion does not persist or transmit titles, URLs, selections, or results
+- [ ] The companion does not persist or transmit titles, URLs, page contents, incognito metadata, raw errors, or browsing history
+- [ ] Any automatic local state or journal remains bounded, sanitized, and documented
 - [ ] Any optional tab-title or URL display and its runtime permission are documented
 - [ ] New data collection or output is documented
