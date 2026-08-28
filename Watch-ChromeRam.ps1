@@ -96,7 +96,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:ChromeRamWatchVersion = '0.2.0'
+$script:ChromeRamWatchVersion = '0.3.0'
 $script:CurrentSessionId = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
 $script:LogicalProcessorCount = [math]::Max(1, [Environment]::ProcessorCount)
 $script:Options = [pscustomobject]@{

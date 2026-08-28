@@ -6,6 +6,32 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-28
+
+### Added
+
+- Opt-in Auto Guard for pressure-aware automatic tab discard
+- Local physical-memory checks through `chrome.system.memory`, scheduled through a Manifest V3 service worker and `chrome.alarms`
+- Three-sample sustained-pressure gate, continuity-gap reset, global cooldown, and a two-attempt cycle limit
+- Separate automatic safeguards for incognito, highlighted, loading, active, pinned, audible, already-discarded, non-auto-discardable, recent, and unknown-state tabs
+- Bounded local action journal with exact tab IDs, reason codes, and confirmed outcomes, but no titles, URLs, page content, telemetry, or raw errors
+- Popup controls for enabling, checking, and disabling Auto Guard, with selectable pressure and inactivity thresholds
+
+### Changed
+
+- The companion is now named Chrome RAM Watch: Auto Guard while preserving the separate manual review flow
+- Local `storage` is the only required non-warning permission; automatic scheduling and memory access remain optional `alarms` and `system.memory` permissions requested only from the enable gesture
+- The popup and service worker share one pure safety module for exact eligibility and revalidation rules
+- The package version is now 0.3.0; the PowerShell watcher remains read-only
+
+### Security
+
+- Auto Guard is disabled by default and requires current, versioned consent before scheduling any checks
+- Disable, re-enable, or automatic-permission removal synchronously cancels a pending cycle, clears stored consent, and prevents permission regrant from silently resuming automation
+- Every automatic mutation is preceded by a persisted intent, an exact-ID fetch, and an immediate fail-closed safety recheck
+- Invalid permission, configuration, storage, clock, memory, query, discard, or confirmation state stops automatic mutation
+- Auto Guard has no host permissions, content scripts, native messaging, network access, telemetry, tab-closing API, or process-control API
+
 ## [0.2.0] - 2026-08-28
 
 ### Added

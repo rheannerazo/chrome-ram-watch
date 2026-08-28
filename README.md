@@ -6,12 +6,12 @@
 
 ![Chrome RAM Watch terminal preview](assets/social-preview.png)
 
-**Diagnose Chrome memory pressure live, then unload only the inactive tabs you explicitly approve.**
+**Diagnose Chrome memory pressure live, then let an opt-in Auto Guard reclaim memory from strictly eligible inactive tabs.**
 
 Chrome RAM Watch has two separate components:
 
 - `Watch-ChromeRam.ps1` is the read-only core. It monitors Windows memory pressure and one or all Chrome browser process trees. It does not require an extension or administrator rights.
-- `companion-extension` is an optional cleanup companion. It can discard selected inactive tabs only after a review screen and a separate confirmation. It never closes tabs or acts automatically.
+- `companion-extension` is an optional cleanup companion. Its disabled-by-default Auto Guard can react to sustained low physical memory, and its separate manual flow can discard only the tabs you review and confirm. Neither mode closes tabs.
 
 The core watcher never closes tabs, ends processes, inspects page contents, changes Chrome settings, writes files, or uses the network.
 
@@ -43,7 +43,7 @@ No PowerShell module or Chrome extension is required for diagnosis.
 - Google Chrome 121 or later
 - Local unpacked-extension installation
 
-The companion has no required permissions, no host permissions, no content scripts, and no background worker. The optional `tabs` permission is requested only if you choose to display tab titles and URLs. Its permitted read-only tab calls are `chrome.tabs.query()` and `chrome.tabs.get()`. Optional permission management is limited to `chrome.permissions.contains()`, `chrome.permissions.request()`, and `chrome.permissions.remove()`.
+The companion requires only Chrome's non-warning `storage` permission and has no host permissions or content scripts. Storage is used only for local Auto Guard consent, configuration, aggregate state, cooldown, and its bounded sanitized journal; it does not enable Auto Guard. The Manifest V3 service worker stays inert until you enable Auto Guard. That enable gesture requests optional `alarms` and `system.memory` permissions. The separate optional `tabs` permission is requested only if you choose to display titles and URLs in the manual view. Optional permission management is limited to `chrome.permissions.contains()`, `chrome.permissions.request()`, and `chrome.permissions.remove()`.
 
 ## Start live diagnosis
 
@@ -121,7 +121,7 @@ Paging counters are system-wide and can spike briefly for unrelated reasons. The
 
 Growth fields begin with the second comparable sample. Per-process trend identity combines a PID with its process creation time so a reused PID does not inherit the old process's history. Total private-memory growth compares the entire selected Chrome scope, including newly created and exited child processes, only while the exact root creation-identity set remains unchanged.
 
-## Use the optional cleanup companion
+## Use the optional Auto Guard companion
 
 The companion uses Chrome's supported `chrome.tabs.discard()` API. Discarding unloads page content while keeping the tab visible. Chrome reloads the page when you activate it again.
 
@@ -131,9 +131,21 @@ Install it locally:
 2. Turn on **Developer mode**.
 3. Select **Load unpacked**.
 4. Select the included `companion-extension` folder.
-5. Open **Chrome RAM Watch: Safe Tab Discard**.
+5. Open **Chrome RAM Watch: Auto Guard**.
 
-Use the protected cleanup flow:
+Enable automatic protection:
+
+1. Choose the available-memory trigger and minimum inactive age. The defaults are 15% available physical RAM and four hours inactive.
+2. Read and accept the one-time unsaved-work warning.
+3. Select **Enable Auto Guard**. Chrome grants the optional local-only `alarms` and `system.memory` capabilities. Required local `storage` remains unable to enable automation by itself.
+4. Leave Chrome running normally. Auto Guard checks every two minutes, requires three consecutive valid low-memory samples, and then attempts at most two oldest eligible tabs.
+5. After an action cycle, Auto Guard waits at least fifteen minutes before another cycle. Open the popup to see the last physical-memory reading, streak, and bounded local action log.
+
+Auto Guard always skips incognito, highlighted, loading, active, pinned, audible, already-discarded, non-auto-discardable, recent, malformed, and unknown-state tabs. It re-fetches each exact tab ID immediately before discard, confirms the returned ID and discarded state, and stops the cycle on an API or confirmation anomaly. Disable, re-enable, or removal of either automatic optional permission synchronously cancels any pending cycle before it can issue a later discard. Disabling clears the alarm, settings, state, and action log, then removes only `alarms` and `system.memory`. Permission removal also clears old consent, so regranting permission cannot silently resume Auto Guard.
+
+`chrome.system.memory` reports total and available physical memory. It does not identify Chrome as the cause, expose Windows commit pressure, or report per-tab RAM. The PowerShell watcher remains the richer diagnostic layer.
+
+Use the separate manual review flow:
 
 1. Open the popup in the Chrome window you want to review. It scans only that current window. Open it separately in every other Chrome window you want to review.
 2. Choose how long a tab must have been inactive.
@@ -144,7 +156,7 @@ Use the protected cleanup flow:
 7. Separately select **Discard selected tabs**.
 8. Keep the popup open while it rechecks every tab and reports confirmed results.
 
-The companion excludes tabs unless Chrome explicitly reports every safety condition:
+The manual flow excludes tabs unless Chrome explicitly reports every safety condition:
 
 - inactive;
 - unpinned;
@@ -157,7 +169,7 @@ Immediately before each discard request, the companion re-fetches the exact tab 
 
 If Chrome allows the extension to run in incognito mode, open the popup separately in each incognito window you want to review. Incognito candidates are explicitly labeled **Incognito** from Chrome's `tab.incognito` value.
 
-The extension cannot detect unfinished forms, drafts, editors, uploads, or other unsaved in-memory page state because it has no host permissions or content scripts. Review every selection. The companion never promises a specific amount of recovered RAM. Keep the PowerShell watcher running to observe the actual before-and-after result.
+The extension cannot detect unfinished forms, drafts, editors, uploads, calls, captures, or other unsaved in-memory page state because it has no host permissions or content scripts. Pin any tab that Auto Guard must never touch, and review every manual selection. The companion never promises a specific amount of recovered RAM. Keep the PowerShell watcher running to observe the actual before-and-after result.
 
 See the companion's [setup and safety guide](companion-extension/README.md) and [security disclosure](companion-extension/SECURITY.md).
 
@@ -225,9 +237,9 @@ The core watcher reads:
 
 Chrome command lines are used only to recognize process type, launch-profile hints, and custom user-data instances. Raw command lines and page URLs are never emitted. `-ListInstances` and JSON instance metadata display the Chrome executable path so multiple channels can be distinguished.
 
-The optional companion reads tab-state metadata through `chrome.tabs.query()` and `chrome.tabs.get()` for eligibility and exact-ID revalidation. It does not read page contents. Titles and URLs are unavailable unless you separately grant the optional `tabs` permission, and they are never stored or transmitted. It manages that optional permission only through `chrome.permissions.contains()`, `chrome.permissions.request()`, and `chrome.permissions.remove()`.
+The optional companion reads tab-state metadata through `chrome.tabs.query()` and `chrome.tabs.get()` for eligibility and exact-ID revalidation. Auto Guard also reads aggregate physical-memory capacity through optional `chrome.system.memory.getInfo()`, schedules local checks through optional `chrome.alarms`, and stores only its configuration, aggregate status, exact tab IDs, timestamps, reason codes, and bounded outcomes in required non-warning `chrome.storage.local`. It does not read page contents. Titles and URLs are unavailable unless you separately grant the optional `tabs` permission, and they are never stored or transmitted. It manages optional permissions only through `chrome.permissions.contains()`, `chrome.permissions.request()`, and `chrome.permissions.remove()`.
 
-Neither component makes a network request or sends telemetry. The core never mutates Chrome. The companion's only tab or page-state mutation is the final, explicitly confirmed `chrome.tabs.discard(tabId)` call for each tab that still passes every safety check.
+Neither component makes a network request or sends telemetry. The core never mutates Chrome. The companion's only tab or page-state mutation is `chrome.tabs.discard(tabId)`, either after an explicit manual confirmation or during a currently consented Auto Guard cycle that passes every pressure, cooldown, configuration, and tab-state check.
 
 ## Limitations
 
@@ -242,6 +254,8 @@ Neither component makes a network request or sends telemetry. The core never mut
 - A specifically selected root PID stops safely if Windows reuses that PID for a different process.
 - The cleanup companion cannot guarantee preservation of unsaved in-memory page state.
 - Chrome decides whether and how much memory a discarded tab releases.
+- Auto Guard sees physical available memory, not Windows commit pressure, Chrome-only usage, or per-tab RAM.
+- Extension alarms may be delayed after sleep, so a long or invalid sample gap resets sustained-pressure continuity.
 
 ## Troubleshooting
 
