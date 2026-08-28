@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest a focused improvement that preserves the read-only design.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Explain the diagnostic problem, not only the proposed interface.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: data
+    attributes:
+      label: Would this read or emit new data?
+      options:
+        - No
+        - Yes
+        - Unsure
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety contract
+      options:
+        - label: This proposal does not require closing tabs, ending processes, changing Chrome, or collecting page contents.
+          required: true
