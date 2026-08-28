@@ -1,0 +1,13 @@
+# Generated release artifacts
+dist/
+.analysis-tools/
+
+# Local editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local diagnostic exports
+*.log
+sample.json
