@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title description">
   <title id="title">Chrome RAM Watch</title>
-  <desc id="description">A read-only PowerShell monitor for Chrome memory pressure on Windows.</desc>
+  <desc id="description">Live Chrome memory diagnosis with an optional, user-confirmed tab discard companion for Windows.</desc>
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#07111f"/>
@@ -25,15 +25,15 @@
     <rect x="14" y="15" width="28" height="26" rx="4" fill="#07111f"/>
     <path d="M19 34h5v-9h5v9h5v-15h5v20H19z" fill="#43d9ad"/>
     <text x="0" y="106" fill="#f4f8ff" font-family="Segoe UI, Arial, sans-serif" font-size="54" font-weight="700">Chrome RAM Watch</text>
-    <text x="0" y="156" fill="#a9bdd2" font-family="Segoe UI, Arial, sans-serif" font-size="27">Find the Chrome process eating your RAM.</text>
+    <text x="0" y="156" fill="#a9bdd2" font-family="Segoe UI, Arial, sans-serif" font-size="27">Diagnose RAM. Unload only approved tabs.</text>
 
     <g transform="translate(0 206)" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="600">
-      <rect width="124" height="42" rx="21" fill="#17364b" stroke="#43d9ad" stroke-opacity="0.55"/>
-      <text x="62" y="27" fill="#b9f8e5" text-anchor="middle">READ-ONLY</text>
-      <rect x="138" width="160" height="42" rx="21" fill="#17364b" stroke="#54a7ff" stroke-opacity="0.55"/>
-      <text x="218" y="27" fill="#c7e3ff" text-anchor="middle">NO EXTENSION</text>
-      <rect x="312" width="118" height="42" rx="21" fill="#17364b" stroke="#9c88ff" stroke-opacity="0.55"/>
-      <text x="371" y="27" fill="#ded7ff" text-anchor="middle">WINDOWS</text>
+      <rect width="160" height="42" rx="21" fill="#17364b" stroke="#43d9ad" stroke-opacity="0.55"/>
+      <text x="80" y="27" fill="#b9f8e5" text-anchor="middle">READ-ONLY CORE</text>
+      <rect x="174" width="154" height="42" rx="21" fill="#17364b" stroke="#54a7ff" stroke-opacity="0.55"/>
+      <text x="251" y="27" fill="#c7e3ff" text-anchor="middle">SAFE DISCARD</text>
+      <rect x="342" width="118" height="42" rx="21" fill="#17364b" stroke="#9c88ff" stroke-opacity="0.55"/>
+      <text x="401" y="27" fill="#ded7ff" text-anchor="middle">WINDOWS</text>
     </g>
 
     <text x="0" y="316" fill="#7f98ae" font-family="Segoe UI, Arial, sans-serif" font-size="20">PowerShell 5.1+  •  MIT licensed  •  JSON output</text>
