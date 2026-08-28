@@ -70,4 +70,4 @@ jobs:
           }
 
       - name: Build release archive
-        run: .\tools\Build-Release.ps1 -Version 0.2.0
+        run: .\tools\Build-Release.ps1 -Version 0.3.0
