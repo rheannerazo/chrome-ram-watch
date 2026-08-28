@@ -9,6 +9,8 @@ const extensionRoot = path.join(repositoryRoot, "companion-extension");
 const manifestPath = path.join(extensionRoot, "manifest.json");
 const popupPath = path.join(extensionRoot, "popup.html");
 const scriptPath = path.join(extensionRoot, "popup.js");
+const guardCorePath = path.join(extensionRoot, "guard-core.js");
+const serviceWorkerPath = path.join(extensionRoot, "service-worker.js");
 const stylePath = path.join(extensionRoot, "popup.css");
 const companionReadmePath = path.join(extensionRoot, "README.md");
 const readmePath = path.join(repositoryRoot, "README.md");
@@ -20,6 +22,8 @@ for (const requiredPath of [
   manifestPath,
   popupPath,
   scriptPath,
+  guardCorePath,
+  serviceWorkerPath,
   stylePath,
   companionReadmePath,
   readmePath,
@@ -38,30 +42,40 @@ assert.deepEqual(
   manifestKeys,
   [
     "action",
+    "background",
     "description",
     "manifest_version",
     "minimum_chrome_version",
     "name",
     "optional_permissions",
+    "permissions",
     "version"
   ],
   "The companion manifest gained an unreviewed capability."
 );
 assert.equal(manifest.manifest_version, 3, "The companion must use Manifest V3.");
 assert.equal(manifest.minimum_chrome_version, "121", "lastAccessed requires Chrome 121 or later.");
-assert.match(manifest.version, /^\d+\.\d+\.\d+$/, "The extension version must be a three-part number.");
+assert.equal(manifest.version, "0.3.0", "The companion version must match the v0.3 release.");
+assert.deepEqual(
+  manifest.background,
+  { service_worker: "service-worker.js" },
+  "The only background entry must be the reviewed Auto Guard service worker."
+);
+assert.deepEqual(
+  manifest.permissions,
+  ["storage"],
+  "Only the non-warning local storage capability may be required."
+);
 assert.deepEqual(
   manifest.optional_permissions,
-  ["tabs"],
-  "The only optional permission may be tabs, used for user-requested titles and URLs."
+  ["alarms", "system.memory", "tabs"],
+  "Only the two runtime Auto Guard capabilities and optional title or URL display may be declared."
 );
 assert.equal(manifest.action.default_popup, "popup.html", "The action must open the local popup.");
 
 for (const forbiddenKey of [
-  "permissions",
   "host_permissions",
   "optional_host_permissions",
-  "background",
   "content_scripts",
   "externally_connectable",
   "web_accessible_resources",
@@ -77,16 +91,19 @@ for (const forbiddenKey of [
 
 const popupText = fs.readFileSync(popupPath, "utf8");
 const scriptText = fs.readFileSync(scriptPath, "utf8");
+const guardCoreText = fs.readFileSync(guardCorePath, "utf8");
+const serviceWorkerText = fs.readFileSync(serviceWorkerPath, "utf8");
 const styleText = fs.readFileSync(stylePath, "utf8");
 const companionReadmeText = fs.readFileSync(companionReadmePath, "utf8");
 const readmeText = fs.readFileSync(readmePath, "utf8");
 const contributingText = fs.readFileSync(contributingPath, "utf8");
 const securityText = fs.readFileSync(securityPath, "utf8");
 const bugReportText = fs.readFileSync(bugReportPath, "utf8");
-const runtimeText = `${popupText}\n${scriptText}\n${styleText}`;
+const runtimeText = `${popupText}\n${scriptText}\n${guardCoreText}\n${serviceWorkerText}\n${styleText}`;
 
 assert.match(popupText, /<link\s+rel="stylesheet"\s+href="popup\.css">/i);
 assert.match(popupText, /<script\s+src="popup\.js"\s+defer><\/script>/i);
+assert.match(popupText, /<script\s+src="guard-core\.js"\s+defer><\/script>/i);
 assert.equal(/<script(?![^>]*\bsrc=)[^>]*>/i.test(popupText), false, "Inline scripts are forbidden.");
 assert.equal(/\son[a-z]+\s*=/i.test(popupText), false, "Inline event handlers are forbidden.");
 assert.equal(/(?:src|href)\s*=\s*["'](?:https?:)?\/\//i.test(popupText), false, "Remote popup assets are forbidden.");
@@ -98,6 +115,20 @@ for (const headingId of ["scan-heading", "review-heading", "results-heading"]) {
     `${headingId} must accept programmatic focus after a panel transition.`
   );
 }
+
+for (const controlId of [
+  "auto-memory-threshold",
+  "auto-age-threshold",
+  "auto-risk-consent",
+  "auto-toggle-button",
+  "auto-check-button",
+  "auto-status",
+  "auto-log-list"
+]) {
+  assert.match(popupText, new RegExp(`id=["']${controlId}["']`, "i"), `Missing Auto Guard control: ${controlId}`);
+}
+assert.match(popupText, /Auto Guard starts off/i, "The disabled-by-default trust boundary is not visible.");
+assert.match(popupText, /Automatic discard can lose unfinished forms/i, "The automatic unsaved-work warning is missing.");
 
 assert.match(
   scriptText,
@@ -237,12 +268,11 @@ const forbiddenRuntimePatterns = new Map([
   ["beacon", /\bsendBeacon\b/i],
   ["remote URL", /https?:\/\/|["'`]\/\/[A-Za-z0-9]/i],
   ["dynamic import", /\bimport\s*\(/i],
-  ["importScripts", /\bimportScripts\s*\(/i],
   ["local storage", /\blocalStorage\b/i],
   ["session storage", /\bsessionStorage\b/i],
   ["IndexedDB", /\bindexedDB\b/i],
-  ["Chrome storage", /\bchrome\.storage\b/i],
-  ["runtime messaging", /\bchrome\.runtime\.(?:sendMessage|connect|sendNativeMessage|connectNative)\b/i],
+  ["synced or managed Chrome storage", /\bchrome(?:Api)?\.storage\.(?:sync|managed)\b/i],
+  ["native or persistent runtime connection", /\bchrome(?:Api)?\.runtime\.(?:connect|sendNativeMessage|connectNative)\b/i],
   ["scripting API", /\bchrome\.scripting\b/i],
   ["processes API", /\bchrome\.processes\b/i],
   ["tab closing or mutation", /\bchrome\.tabs\.(?:remove|reload|update|create|move|duplicate)\s*\(/i],
@@ -260,6 +290,16 @@ for (const [label, pattern] of forbiddenRuntimePatterns) {
   assert.equal(pattern.test(runtimeText), false, `Forbidden companion capability detected: ${label}`);
 }
 
+const importScriptsCalls = [...serviceWorkerText.matchAll(/importScripts\s*\(([^)]*)\)/g)];
+assert.equal(importScriptsCalls.length, 1, "The service worker must import exactly one local script.");
+assert.equal(importScriptsCalls[0][1].trim(), '"guard-core.js"', "Only the local guard core may be imported.");
+assert.equal(/\bimportScripts\s*\(/.test(scriptText + guardCoreText), false, "Only the service worker may call importScripts.");
+assert.match(serviceWorkerText, /chromeApi\.storage\.local\.get\(/, "Auto Guard must read only local storage.");
+assert.match(serviceWorkerText, /chromeApi\.storage\.local\.set\(/, "Auto Guard must persist only to local storage.");
+assert.match(serviceWorkerText, /chromeApi\.storage\.local\.remove\(/, "Auto Guard disable must clear local storage.");
+assert.match(serviceWorkerText, /chromeApi\.system\.memory\.getInfo\(/, "Physical-memory measurement is missing.");
+assert.match(serviceWorkerText, /chromeApi\.alarms\.onAlarm\.addListener\(/, "The named alarm listener is missing.");
+
 const tabsMethods = [...scriptText.matchAll(/chrome\.tabs\.([A-Za-z][A-Za-z0-9_]*)/g)]
   .map((match) => match[1]);
 assert.deepEqual(
@@ -275,9 +315,12 @@ assert.deepEqual(
   "Only contains, request, and remove are allowed from chrome.permissions."
 );
 
-const discardCalls = [...scriptText.matchAll(/chrome\.tabs\.discard\s*\(([^)]*)\)/g)];
-assert.equal(discardCalls.length, 1, "There must be exactly one tab-discard call site.");
-assert.equal(discardCalls[0][1].trim(), "reviewedTab.id", "Discard must always receive the exact reviewed tab ID.");
+const manualDiscardCalls = [...scriptText.matchAll(/chrome\.tabs\.discard\s*\(([^)]*)\)/g)];
+assert.equal(manualDiscardCalls.length, 1, "The manual flow must have exactly one tab-discard call site.");
+assert.equal(manualDiscardCalls[0][1].trim(), "reviewedTab.id", "Manual discard must use the exact reviewed tab ID.");
+const automaticDiscardCalls = [...serviceWorkerText.matchAll(/chromeApi\.tabs\.discard\s*\(([^)]*)\)/g)];
+assert.equal(automaticDiscardCalls.length, 1, "Auto Guard must have exactly one tab-discard call site.");
+assert.equal(automaticDiscardCalls[0][1].trim(), "candidate.id", "Automatic discard must use the exact candidate tab ID.");
 
 const reviewStart = scriptText.indexOf("async function reviewSelection()");
 const reviewEnd = scriptText.indexOf("function createResultItem", reviewStart);
@@ -335,6 +378,38 @@ const busySetIndex = discardBody.indexOf("state.busy = true");
 const firstAwaitIndex = discardBody.indexOf("await ");
 assert.ok(busyGuardIndex >= 0 && busySetIndex > busyGuardIndex, "The final action needs a busy guard.");
 assert.ok(firstAwaitIndex > busySetIndex, "The busy lock must be set synchronously before the first await.");
+
+const autoCycleStart = serviceWorkerText.indexOf("async function runAutoGuardCycle(");
+const autoCycleEnd = serviceWorkerText.indexOf("function runAutoGuardLocked(", autoCycleStart);
+assert.ok(autoCycleStart >= 0 && autoCycleEnd > autoCycleStart, "Could not isolate the automatic cycle.");
+const autoCycleBody = serviceWorkerText.slice(autoCycleStart, autoCycleEnd);
+const autoIntentIndex = autoCycleBody.indexOf("if (!await reserveIntent(");
+const autoFinalGetIndex = autoCycleBody.indexOf("currentTab = await chromeApi.tabs.get(candidate.id)");
+const autoRevalidationIndex = autoCycleBody.indexOf("const ineligibilityReason = core.getAutoIneligibilityReason(");
+const autoDiscardIndex = autoCycleBody.indexOf("discardPromise = chromeApi.tabs.discard(candidate.id)");
+const autoConfirmationIndex = autoCycleBody.indexOf("confirmedTab = await chromeApi.tabs.get(candidate.id)");
+assert.ok(autoIntentIndex >= 0, "An automatic intent must be persisted before mutation.");
+assert.ok(autoFinalGetIndex > autoIntentIndex, "The exact final tab fetch must follow the persisted intent.");
+assert.ok(autoRevalidationIndex > autoFinalGetIndex, "Automatic pure revalidation must follow the fresh exact-ID fetch.");
+assert.ok(autoDiscardIndex > autoRevalidationIndex, "Automatic discard must follow strict revalidation.");
+assert.ok(autoConfirmationIndex > autoDiscardIndex, "Automatic discard requires a fresh post-call confirmation.");
+const autoImmediateCallStart = autoCycleBody.indexOf("let discardPromise;", autoRevalidationIndex);
+assert.ok(autoImmediateCallStart > autoRevalidationIndex && autoImmediateCallStart < autoDiscardIndex);
+assert.equal(
+  /\bawait\b/.test(autoCycleBody.slice(autoImmediateCallStart, autoDiscardIndex)),
+  false,
+  "No asynchronous gap is allowed immediately before the automatic discard call."
+);
+assert.match(
+  autoCycleBody,
+  /!discardResponse[\s\S]*?discardResponse\.id !== candidate\.id[\s\S]*?discardResponse\.discarded !== true/,
+  "Automatic discard must reject an undefined, wrong-ID, or unconfirmed response."
+);
+assert.match(
+  serviceWorkerText,
+  /if \(activeCyclePromise\) \{[\s\S]*?return activeCyclePromise;[\s\S]*?activeCyclePromise = runAutoGuardCycle/,
+  "Overlapping automatic cycles must share one in-memory lock."
+);
 
 assert.match(
   scriptText,

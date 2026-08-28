@@ -19,6 +19,7 @@ if ([string]::IsNullOrWhiteSpace($CompanionTestPath)) {
 $resolvedScript = (Resolve-Path -LiteralPath $ScriptPath).Path
 $repositoryRoot = Split-Path -Parent $resolvedScript
 $resolvedCompanionTest = (Resolve-Path -LiteralPath $CompanionTestPath).Path
+$resolvedAutoGuardTest = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot 'Test-AutoGuard.js')).Path
 
 function Assert-Equal {
     param(
@@ -196,7 +197,7 @@ foreach ($powerShellFile in $powerShellFiles) {
 
 . $resolvedScript
 
-Assert-Equal -Actual $script:ChromeRamWatchVersion -Expected '0.2.0' -Message 'Watcher version mismatch.'
+Assert-Equal -Actual $script:ChromeRamWatchVersion -Expected '0.3.0' -Message 'Watcher version mismatch.'
 Assert-Equal `
     -Actual $script:SustainedPressureThresholdSamples `
     -Expected 3 `
@@ -625,7 +626,7 @@ Assert-PropertySet `
     -Expected @('PID', 'RootProcessId', 'Type', 'Extension', 'CreationIdentity', 'CreatedAt', 'ProcessAgeSeconds', 'ProcessAge', 'WorkingSetMB', 'WorkingSetDeltaMB', 'PrivateBytesMB', 'PrivateBytesDeltaMB', 'PrivateGrowthMBPerMinute', 'CPUPercent') `
     -Message 'JSON process schema changed.'
 Assert-Equal -Actual $jsonSample.SchemaVersion -Expected 'chrome-ram-watch/v2' -Message 'JSON schema version changed.'
-Assert-Equal -Actual $jsonSample.ToolVersion -Expected '0.2.0' -Message 'JSON tool version changed.'
+Assert-Equal -Actual $jsonSample.ToolVersion -Expected '0.3.0' -Message 'JSON tool version changed.'
 Assert-Equal -Actual $jsonSample.Scope.Type -Expected 'all-browser-process-trees' -Message 'JSON all-instance scope changed.'
 Assert-Equal -Actual $jsonSample.Scope.AllInstances -Expected $true -Message 'JSON all-instance flag changed.'
 Assert-Null -Actual $jsonSample.Scope.RootProcessId -Message 'All-instance JSON must not claim one root PID.'
@@ -1257,4 +1258,9 @@ if ($LASTEXITCODE -ne 0) {
     throw "Companion safety tests failed with exit code $LASTEXITCODE."
 }
 
-Write-Output 'All Chrome RAM Watch v0.2 static and behavior tests passed.'
+& $nodeCommand.Source $resolvedAutoGuardTest
+if ($LASTEXITCODE -ne 0) {
+    throw "Auto Guard safety tests failed with exit code $LASTEXITCODE."
+}
+
+Write-Output 'All Chrome RAM Watch v0.3 static and behavior tests passed.'
