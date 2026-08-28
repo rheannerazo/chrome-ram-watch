@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Safe tab discard</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <p class="eyebrow">Chrome RAM Watch companion</p>
+        <h1>Safe tab discard</h1>
+        <p class="intro">
+          Review inactive tabs and choose exactly which ones Chrome may unload from memory.
+        </p>
+      </header>
+
+      <div class="safety-banner">
+        <strong>Manual only.</strong> This popup never discards a tab until you complete the separate review and discard steps.
+      </div>
+
+      <section id="scan-panel" aria-labelledby="scan-heading">
+        <h2 id="scan-heading" tabindex="-1">Choose candidates</h2>
+        <p class="permission-note">
+          This scan covers only this Chrome window. Open the popup separately in every Chrome window you want to review.
+        </p>
+
+        <label class="field" for="age-threshold">
+          <span class="field__label">Inactive for at least</span>
+          <select id="age-threshold">
+            <option value="15">15 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="60" selected>1 hour</option>
+            <option value="120">2 hours</option>
+            <option value="240">4 hours</option>
+            <option value="480">8 hours</option>
+            <option value="1440">24 hours</option>
+          </select>
+        </label>
+
+        <div class="button-row button-row--split">
+          <button
+            id="details-permission-button"
+            class="button button--secondary"
+            type="button"
+            aria-describedby="details-permission-note"
+          >
+            Show titles and URLs
+          </button>
+          <button id="refresh-button" class="button button--secondary" type="button">
+            Refresh
+          </button>
+        </div>
+
+        <p id="details-permission-note" class="permission-note">
+          Optional: grant the <code>tabs</code> permission only if you want titles and URLs shown. Tab IDs work without it.
+        </p>
+
+        <p id="scan-status" class="status" role="status" aria-live="polite"></p>
+
+        <div class="selection-bar">
+          <label class="select-all-label" for="select-all">
+            <input id="select-all" type="checkbox">
+            <span>Select all eligible tabs</span>
+          </label>
+          <span id="selection-count" class="selection-count">0 selected</span>
+        </div>
+
+        <p id="empty-message" class="empty-message" hidden>
+          No tabs match every safety condition at this threshold.
+        </p>
+        <ul id="tab-list" class="tab-list" aria-label="Eligible inactive tabs"></ul>
+
+        <button id="review-button" class="button button--primary button--full" type="button" disabled>
+          Review selected tabs
+        </button>
+      </section>
+
+      <section id="review-panel" aria-labelledby="review-heading" hidden>
+        <h2 id="review-heading" tabindex="-1">Review exact tabs</h2>
+
+        <div class="warning" role="alert">
+          <strong>Unsaved work warning.</strong>
+          Discarding unloads a page from memory. Chrome keeps the tab and reloads it when you activate it, but unsaved form entries or in-page work may be lost. This extension cannot inspect unsaved state.
+        </div>
+
+        <p id="review-summary" class="summary"></p>
+        <p class="permission-note">
+          The final action is bound to each exact Chrome tab ID. Titles and URLs are display labels and may change if a page navigates.
+        </p>
+        <ul id="review-list" class="tab-list tab-list--review" aria-label="Tabs ready for final discard confirmation"></ul>
+
+        <div id="review-skipped-container" class="skipped-block" hidden>
+          <h3>Left out before review</h3>
+          <ul id="review-skipped-list" class="result-list"></ul>
+        </div>
+
+        <p id="review-status" class="status" role="status" aria-live="polite"></p>
+
+        <div class="button-row">
+          <button id="back-button" class="button button--secondary" type="button">
+            Back
+          </button>
+          <button id="discard-button" class="button button--danger" type="button">
+            Discard selected tabs
+          </button>
+        </div>
+      </section>
+
+      <section id="results-panel" aria-labelledby="results-heading" hidden>
+        <h2 id="results-heading" tabindex="-1">Results</h2>
+        <p id="results-summary" class="summary" role="status" aria-live="polite"></p>
+        <ul id="results-list" class="result-list" aria-label="Discard results"></ul>
+        <button id="scan-again-button" class="button button--primary button--full" type="button">
+          Scan again
+        </button>
+      </section>
+
+      <footer class="app-footer">
+        Discard is not close. Your tabs stay in the tab strip.
+      </footer>
+    </main>
+
+    <script src="popup.js" defer></script>
+  </body>
+</html>
