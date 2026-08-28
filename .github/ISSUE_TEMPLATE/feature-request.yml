@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest a focused improvement that preserves the read-only design.
+description: Suggest a focused improvement that preserves the component safety contracts.
 title: "[Feature]: "
 labels:
   - enhancement
@@ -32,5 +32,7 @@ body:
     attributes:
       label: Safety contract
       options:
-        - label: This proposal does not require closing tabs, ending processes, changing Chrome, or collecting page contents.
+        - label: This proposal does not require closing tabs, ending processes, background cleanup, page-content collection, telemetry, or network access.
+          required: true
+        - label: Any proposed tab discard remains in the optional companion and requires exact review, separate confirmation, and final-state revalidation.
           required: true

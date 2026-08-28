@@ -12,7 +12,7 @@ body:
     id: version
     attributes:
       label: Chrome RAM Watch version
-      placeholder: 0.1.0
+      placeholder: 0.2.0
     validations:
       required: true
   - type: input
@@ -26,15 +26,33 @@ body:
     id: powershell
     attributes:
       label: PowerShell version
-      description: Run $PSVersionTable.PSVersion to find it.
+      description: Required for watcher reports. Run $PSVersionTable.PSVersion to find it.
       placeholder: 7.6.4
+    validations:
+      required: false
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - PowerShell watcher
+        - Optional cleanup companion
+        - Release package or documentation
+    validations:
+      required: true
+  - type: input
+    id: chrome
+    attributes:
+      label: Chrome version
+      description: Required for cleanup-companion reports. For reports that do not involve the companion, enter Not applicable.
+      placeholder: 140.0.0.0
     validations:
       required: true
   - type: textarea
     id: command
     attributes:
-      label: Command used
-      render: powershell
+      label: Command or exact UI steps
+      description: Enter the PowerShell command, or for companion reports list every popup action in order and name the Chrome window type, regular or incognito.
     validations:
       required: true
   - type: textarea
