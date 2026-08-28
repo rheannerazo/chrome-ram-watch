@@ -32,7 +32,7 @@ body:
     attributes:
       label: Safety contract
       options:
-        - label: This proposal does not require closing tabs, ending processes, background cleanup, page-content collection, telemetry, or network access.
+        - label: This proposal does not require closing tabs, ending processes, page-content collection, telemetry, native messaging, or network access.
           required: true
-        - label: Any proposed tab discard remains in the optional companion and requires exact review, separate confirmation, and final-state revalidation.
+        - label: Any proposed manual tab discard keeps exact review, separate confirmation, and final-state revalidation; any automatic discard keeps current consent, strict pressure and cooldown gates, a bounded cap, and final-state revalidation.
           required: true
